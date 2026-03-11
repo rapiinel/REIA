@@ -1,0 +1,253 @@
+validate_address_task:
+  description: >
+    Validate and normalize the input address.
+
+    Input:
+    street: {street}
+    city: {city}
+    state: {state}
+    zip: {zip}
+
+    Responsibilities:
+    - Confirm the address exists.
+    - Normalize the address to a standard format.
+    - Identify if the address appears commercial, industrial, mixed-use, residential, or unknown.
+    - Reject partial or invalid addresses.
+
+    Use address validation tools if available.
+
+    Rules:
+    - Do not invent addresses.
+    - If the address cannot be confirmed, clearly state that.
+
+  expected_output: >
+    A structured JSON-style summary containing:
+    normalized_address
+    search_address
+    address_status (validated, invalid, ambiguous)
+    address_type_guess (commercial, industrial, residential, unknown)
+    latitude
+    longitude
+    address_notes
+    confidence
+
+  agent: address_validator
+
+
+find_business_task:
+  description: >
+    Identify the actual business operating at the exact normalized address.
+
+    The main goal is to determine what business is physically located at the address.
+    This can be a named business like RaceWay, or a business type like gasoline station,
+    warehouse, medical office, restaurant, or retail store.
+
+    Search strategy:
+    - Search the normalized address exactly.
+    - Look for business names tied directly to the address.
+    - Look for page summaries, map results, directory results, and business listings.
+    - Infer the business type from the evidence when clearly supported.
+
+    Rules:
+    - Prefer businesses directly tied to the address.
+    - Ignore nearby businesses unless they are explicitly shown at the same address.
+    - If the search shows a known brand and the address page supports it, return that business.
+    - If the business name is unclear but the business type is clear, return the business type.
+    - Do not invent a business name.
+
+    Examples:
+    - If the address page shows RaceWay and gas station indicators, return RaceWay and gasoline station.
+    - If the address page shows a warehouse operator, return that company and industrial warehouse.
+    - If no occupant is clear, return null and explain why.
+
+  expected_output: >
+    A structured JSON-style summary containing:
+    confirmed_business_name
+    dba_name
+    business_type
+    website
+    phone
+    linkedin
+    business_description
+    employee_estimate
+    source_evidence
+    business_confidence
+
+  agent: business_finder
+
+  context:
+    - validate_address_task
+
+  expected_output: >
+    A structured JSON-style summary containing:
+    confirmed_business_name
+    dba_name
+    website
+    phone
+    linkedin
+    business_description
+    employee_estimate
+    source_evidence
+    business_confidence
+
+  agent: business_finder
+
+  context:
+    - validate_address_task
+
+
+classify_naics_task:
+  description: >
+    Determine the most likely NAICS classification for the confirmed business.
+
+    Use:
+    - company description
+    - company website
+    - products or services offered
+    - industry listings
+    - directory descriptions
+
+    Steps:
+    - Identify the core service or product the business provides.
+    - Map that activity to the closest NAICS classification.
+    - Select the most specific NAICS code possible.
+
+    Rules:
+    - The primary NAICS must reflect the core revenue activity.
+    - Secondary NAICS codes may be included if supported by evidence.
+    - Do not guess NAICS codes without reasoning.
+
+  expected_output: >
+    A structured JSON-style summary containing:
+    primary_naics_code
+    primary_naics_title
+    secondary_naics_codes
+    industry_category
+    classification_reasoning
+    naics_confidence
+
+  agent: naics_classifier
+
+  context:
+    - find_business_task
+
+
+property_intel_task:
+  description: >
+    Analyze the address and confirmed business for commercial real estate intelligence.
+
+    Use web search tools to identify property information related to the address.
+
+    Look for:
+    - county appraisal pages
+    - assessor records
+    - parcel data
+    - commercial listings
+    - property reports
+    - building details
+
+    Extract signals useful for commercial real estate analysis.
+
+    Include:
+    - property_use_type
+    - industrial_subtype if relevant
+    - occupancy_type (tenant, owner-occupied, unknown)
+    - owner_name if available
+    - owner_entity_type if available
+    - building_sqft if available
+    - lot_size if available
+    - year_built if available
+    - multi_tenant_flag
+    - expansion_signals if visible
+
+    Industrial subtype examples:
+    - warehouse
+    - distribution
+    - manufacturing
+    - flex industrial
+    - cold storage
+    - yard / outdoor storage
+    - logistics terminal
+
+    Rules:
+    - Prefer government sources for ownership and building details.
+    - Prefer assessor or appraisal pages for property facts.
+    - If information cannot be confirmed, return null.
+
+  expected_output: >
+    A structured JSON-style summary containing:
+    property_use_type
+    industrial_subtype
+    occupancy_type
+    owner_name
+    owner_entity_type
+    building_sqft
+    lot_size
+    year_built
+    multi_tenant_flag
+    expansion_signals
+    property_sources
+    property_confidence
+
+  agent: property_intel_analyst
+
+  context:
+    - validate_address_task
+    - find_business_task
+
+
+compile_report_task:
+  description: >
+    Compile the final structured REIA report.
+
+    Use only information produced by previous tasks.
+
+    Do not invent data.
+
+    Rules for missing data:
+    - Use null for missing scalar values.
+    - Use [] for empty lists.
+    - Confidence fields must be one of: high, medium, low.
+
+    If the address evidence clearly indicates a business category such as gasoline station,
+    warehouse, restaurant, medical office, or retail store, include it in business_type.
+
+  expected_output: >
+    A final structured report matching the ReiaOutput schema containing:
+
+    input_address
+    normalized_address
+    confirmed_business_name
+    dba_name
+    business_type
+    business_confidence
+    primary_naics_code
+    primary_naics_title
+    secondary_naics_codes
+    business_description
+    website
+    phone
+    linkedin
+    employee_estimate
+    industry_category
+    property_use_type
+    industrial_subtype
+    occupancy_type
+    owner_name
+    owner_entity_type
+    building_sqft
+    lot_size
+    year_built
+    multi_tenant_flag
+    expansion_signals
+    sources
+    final_confidence
+    notes
+
+  agent: report_compiler
+
+  context:
+    - validate_address_task
+    - find_business_task
+    - classify_naics_task
+    - property_intel_task
