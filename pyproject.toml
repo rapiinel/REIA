@@ -8,7 +8,8 @@ dependencies = [
     "crewai[tools]==1.6.0",
     "streamlit",
     "crewai",
-    "openai"
+    "openai",
+    "usaddress>=0.5.16",
 ]
 
 [project.scripts]
